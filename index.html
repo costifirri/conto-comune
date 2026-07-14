@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Conto Comune</title>
+<meta name="description" content="Le spese condivise, senza pensieri">
+<meta name="theme-color" content="#fdf6ec">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Conto Comune">
+<style>
+  :root {
+    --bg: #fdf6ec;
+    --paper: #ffffff;
+    --ink: #33302e;
+    --ink-light: #8a8178;
+    --accent: #ff6b5e;
+    --accent-soft: #ffe8dd;
+    --accent2: #4ecdc4;
+    --accent2-soft: #e0f7f5;
+    --yellow: #ffd166;
+    --line: #f0e6d8;
+    --green: #06a77d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    display: flex;
+    justify-content: center;
+    padding: 24px 12px;
+    min-height: 100vh;
+  }
+  .receipt {
+    width: 100%;
+    max-width: 480px;
+    background: var(--paper);
+    box-shadow: 0 4px 24px rgba(255,107,94,0.12);
+    border-radius: 20px;
+    padding: 28px 22px 36px;
+    position: relative;
+  }
+  h1 {
+    text-align: center;
+    font-size: 24px;
+    font-weight: 800;
+    margin: 0 0 2px;
+    letter-spacing: -0.5px;
+  }
+  .sub {
+    text-align: center;
+    font-size: 13px;
+    color: var(--ink-light);
+    margin-bottom: 16px;
+    font-weight: 500;
+  }
+  .dashed {
+    border: none;
+    border-top: 2px dashed var(--line);
+    margin: 16px 0;
+  }
+
+  /* Account switcher */
+  .accounts-bar {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    margin-bottom: 14px;
+    scrollbar-width: thin;
+  }
+  .accounts-bar::-webkit-scrollbar { height: 4px; }
+  .account-pill {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 14px;
+    background: var(--accent2-soft);
+    color: #1a7a72;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+    border: 2px solid transparent;
+  }
+  .account-pill.active {
+    background: var(--accent2);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(78,205,196,0.4);
+  }
+  .account-pill.add {
+    background: var(--paper);
+    color: var(--ink-light);
+    border: 2px dashed var(--line);
+  }
+
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 18px;
+  }
+  .tab {
+    flex: 1;
+    padding: 10px 4px;
+    text-align: center;
+    font-size: 11.5px;
+    font-weight: 700;
+    background: var(--accent-soft);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    color: var(--ink-light);
+    transition: all 0.18s cubic-bezier(.34,1.56,.64,1);
+    user-select: none;
+  }
+  .tab .tab-icon { display: block; font-size: 17px; margin-bottom: 2px; }
+  .tab.active {
+    background: var(--accent);
+    color: white;
+    transform: translateY(-2px) scale(1.04);
+    box-shadow: 0 4px 10px rgba(255,107,94,0.35);
+  }
+  .section { display: none; animation: fade 0.25s ease; }
+  .section.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pop { 0% { transform: scale(0.9); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
+
+  label {
+    display: block;
+    font-size: 11.5px;
+    color: var(--ink-light);
+    margin-bottom: 5px;
+    margin-top: 14px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  input, select {
+    width: 100%;
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 14.5px;
+    border: 2px solid var(--line);
+    border-radius: 10px;
+    background: #fffefb;
+    color: var(--ink);
+  }
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    border-radius: 10px;
+    transition: transform 0.12s ease, opacity 0.15s ease;
+  }
+  button:active { transform: scale(0.95); }
+  .btn-primary {
+    width: 100%;
+    background: linear-gradient(135deg, var(--accent), #ff8a72);
+    color: white;
+    padding: 13px;
+    font-size: 14px;
+    font-weight: 800;
+    margin-top: 18px;
+    box-shadow: 0 4px 12px rgba(255,107,94,0.35);
+  }
+  .btn-primary:hover { opacity: 0.92; }
+  .btn-secondary {
+    width: 100%;
+    background: var(--accent2);
+    color: white;
+    padding: 13px;
+    font-size: 14px;
+    font-weight: 800;
+    margin-top: 18px;
+    box-shadow: 0 4px 12px rgba(78,205,196,0.35);
+  }
+  .btn-danger-outline {
+    width: 100%;
+    background: transparent;
+    color: var(--accent);
+    border: 2px solid var(--accent-soft);
+    padding: 11px;
+    font-size: 12.5px;
+    font-weight: 700;
+    margin-top: 22px;
+  }
+  .btn-danger-outline:hover { background: var(--accent-soft); }
+
+  .expense-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 11px 0;
+    border-bottom: 2px dashed var(--line);
+    font-size: 13.5px;
+    gap: 8px;
+    animation: fade 0.25s ease;
+  }
+  .expense-icon {
+    font-size: 20px;
+    width: 32px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .expense-info { flex: 1; min-width: 0; }
+  .expense-desc { font-weight: 700; }
+  .expense-meta { color: var(--ink-light); font-size: 11px; margin-top: 2px; }
+  .expense-amount { font-weight: 800; white-space: nowrap; color: var(--ink); }
+  .expense-del {
+    background: none;
+    color: var(--ink-light);
+    font-size: 17px;
+    padding: 2px 6px;
+    line-height: 1;
+  }
+  .expense-del:hover { color: var(--accent); }
+
+  .filters {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .filters select { flex: 1; min-width: 100px; font-size: 12.5px; padding: 7px 8px; border-radius: 8px; }
+
+  .balance-card {
+    background: var(--accent-soft);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 10px 0;
+    font-size: 13.5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    animation: pop 0.25s ease;
+  }
+  .balance-card.settled { background: var(--accent2-soft); opacity: 0.7; }
+  .balance-text b { color: var(--accent); }
+  .balance-card.settled .balance-text b { color: var(--green); }
+  .settle-btn {
+    background: var(--ink);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 7px 12px;
+  }
+  .balance-card.settled .settle-btn { background: var(--green); }
+  .settle-btn:hover { opacity: 0.85; }
+
+  .totals-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 7px 12px;
+    font-size: 13.5px;
+  }
+  .totals-grid .label { color: var(--ink-light); font-weight: 600; }
+  .totals-grid .val { text-align: right; font-weight: 800; }
+
+  .empty-msg {
+    text-align: center;
+    color: var(--ink-light);
+    font-size: 13px;
+    padding: 30px 10px;
+    line-height: 1.6;
+  }
+  .empty-emoji { font-size: 34px; display: block; margin-bottom: 8px; }
+
+  .people-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .person-chip {
+    background: var(--accent2-soft);
+    border-radius: 16px;
+    padding: 7px 14px;
+    font-size: 12.5px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #1a7a72;
+  }
+  .person-chip button {
+    background: none;
+    color: var(--ink-light);
+    font-size: 13px;
+    padding: 0;
+  }
+
+  .status-msg {
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--green);
+    font-weight: 700;
+    margin-top: 14px;
+    min-height: 16px;
+  }
+  .total-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 16px;
+    font-weight: 800;
+    padding: 14px 16px;
+    background: var(--yellow);
+    border-radius: 14px;
+    margin-top: 10px;
+  }
+  .reset-link {
+    display: block;
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--ink-light);
+    margin-top: 24px;
+    text-decoration: underline;
+    cursor: pointer;
+    background: none;
+    border: none;
+    width: 100%;
+  }
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(51,48,46,0.5);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 10;
+    padding: 16px;
+  }
+  .modal-box {
+    background: var(--paper);
+    padding: 22px;
+    border-radius: 16px;
+    max-width: 320px;
+    width: 100%;
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+  .modal-box h3 { margin: 0 0 4px; font-size: 16px; }
+  .type-toggle { display: flex; gap: 8px; margin-top: 6px; }
+  .type-opt {
+    flex: 1;
+    text-align: center;
+    padding: 12px 6px;
+    border-radius: 12px;
+    background: var(--bg);
+    border: 2px solid var(--line);
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12.5px;
+  }
+  .type-opt .to-icon { display: block; font-size: 22px; margin-bottom: 4px; }
+  .type-opt.selected { border-color: var(--accent2); background: var(--accent2-soft); }
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 18px;
+  }
+  .modal-actions button { flex: 1; padding: 10px; font-size: 12.5px; font-weight: 700; }
+  .btn-cancel { background: var(--line); color: var(--ink); }
+  .btn-confirm { background: var(--accent); color: white; }
+  .loading { text-align: center; padding: 40px 0; color: var(--ink-light); font-size: 12.5px; }
+
+  .month-select-row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+  .month-select-row select { flex: 1; border-radius: 10px; }
+  .analytics-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 14px 0;
+  }
+  .stat-box {
+    background: var(--accent2-soft);
+    border-radius: 14px;
+    padding: 12px 12px;
+    text-align: center;
+  }
+  .stat-box .stat-val { font-size: 18px; font-weight: 800; }
+  .stat-box .stat-label { font-size: 10px; color: var(--ink-light); font-weight: 700; margin-top: 3px; }
+  .stat-box.up { background: var(--accent-soft); }
+  .stat-box.up .stat-val { color: var(--accent); }
+  .stat-box.down { background: #e2f6ee; }
+  .stat-box.down .stat-val { color: var(--green); }
+  .chart-wrap { margin: 18px 0 6px; }
+  .chart-bar-label { font-size: 10.5px; fill: var(--ink-light); font-family: inherit; font-weight: 600; }
+  .chart-val-label { font-size: 11px; fill: var(--ink); font-weight: 800; font-family: inherit; }
+  .cat-bar-row { margin-bottom: 12px; }
+  .cat-bar-head { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 4px; }
+  .cat-bar-head .cname { font-weight: 700; }
+  .cat-bar-track { background: var(--accent-soft); border-radius: 6px; height: 10px; overflow: hidden; }
+  .cat-bar-fill { background: linear-gradient(90deg, var(--accent), var(--yellow)); height: 100%; border-radius: 6px; transition: width 0.4s cubic-bezier(.34,1.56,.64,1); }
+
+  .footer-line {
+    text-align: center;
+    font-size: 11px;
+    color: var(--ink-light);
+    margin-top: 10px;
+  }
+  .link-btn {
+    background: none;
+    color: var(--ink-light);
+    font-size: 11px;
+    text-decoration: underline;
+    padding: 0;
+  }
+  .auth-note {
+    font-size: 11.5px;
+    color: var(--ink-light);
+    text-align: center;
+    margin-top: 14px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div class="receipt">
+  <h1 id="appTitle">💸 Conto Comune</h1>
+  <div class="sub" id="appSub">le spese condivise, senza pensieri</div>
+
+  <div id="setupScreen" style="display:none">
+    <hr class="dashed">
+    <div class="empty-msg">
+      <span class="empty-emoji">⚙️</span>
+      L'app non è ancora collegata a Firebase.<br>
+      Incolla la configurazione del progetto nel file <b>firebase-config.js</b> e ricarica la pagina.
+    </div>
+  </div>
+
+  <div id="authScreen" style="display:none">
+    <hr class="dashed">
+    <label>Email</label>
+    <input type="email" id="loginEmail" placeholder="es. nome@esempio.it" autocomplete="username">
+    <label>Password</label>
+    <input type="password" id="loginPassword" placeholder="minimo 6 caratteri" autocomplete="current-password">
+    <button class="btn-primary" id="loginBtn">🔑 Accedi</button>
+    <button class="btn-secondary" id="registerBtn">✨ Crea nuovo conto comune</button>
+    <button class="reset-link" id="forgotBtn">password dimenticata?</button>
+    <div class="status-msg" id="authMsg" style="color:var(--accent)"></div>
+    <div class="auth-note">Un "conto comune" è un account condiviso: chi ha email e password vede le stesse spese, da qualsiasi dispositivo.</div>
+  </div>
+
+  <div id="mainApp" style="display:none">
+    <div class="accounts-bar" id="accountsBar"></div>
+    <hr class="dashed">
+
+    <div id="app"><div class="loading" id="loadingMsg">Caricamento dati...</div></div>
+
+    <button class="reset-link" id="resetBtn" style="display:none;">🗑️ azzera tutti i dati di questo conto</button>
+    <div class="footer-line"><span id="userEmail"></span> · <button class="link-btn" id="logoutBtn">esci</button></div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, signOut, sendPasswordResetEmail
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import {
+  initializeFirestore, persistentLocalCache, doc, setDoc, onSnapshot
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { firebaseConfig } from './firebase-config.js';
+
+const configured = firebaseConfig && firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('INCOLLA');
+
+let auth = null, db = null;
+if (configured) {
+  const fbApp = initializeApp(firebaseConfig);
+  auth = getAuth(fbApp);
+  db = initializeFirestore(fbApp, { localCache: persistentLocalCache() });
+}
+
+const CATS_BY_TYPE = {
+  casa: ['Casa','Spesa','Bollette','Svago','Trasporti','Altro'],
+  viaggio: ['Volo','Alloggio','Cibo','Attività','Trasporti','Shopping','Altro']
+};
+const CAT_ICONS = {
+  Casa:'🏠', Spesa:'🛒', Bollette:'💡', Svago:'🎉', Trasporti:'🚗', Altro:'📦',
+  Volo:'✈️', Alloggio:'🏨', Cibo:'🍽️', Attività:'🎟️', Shopping:'🛍️'
+};
+const MONTH_NAMES = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+
+let state = { accounts: {}, order: [], activeId: null };
+let activeTab = 'spese';
+let filters = { person: 'all', category: 'all' };
+let analysisMonth = null;
+let loaded = false;
+
+function newAccount(name, type) {
+  const id = 'acc-' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+  return { id, name, icon: type === 'viaggio' ? '✈️' : '🏠', type, people: [], expenses: [], settlements: [] };
+}
+
+function defaultState() {
+  const acc = newAccount('Casa', 'casa');
+  acc.id = 'acc-casa';
+  return { accounts: { [acc.id]: acc }, order: [acc.id], activeId: acc.id };
+}
+
+function normalizeState() {
+  if (!state.order || state.order.length === 0) state = defaultState();
+  if (!state.activeId || !state.accounts[state.activeId]) state.activeId = state.order[0];
+}
+
+let unsubscribeSync = null;
+let lastSavedJson = null;
+
+function startSync(user) {
+  document.getElementById('userEmail').textContent = user.email;
+  const ref = doc(db, 'groups', user.uid);
+  unsubscribeSync = onSnapshot(ref, (snap) => {
+    const json = snap.exists() ? snap.data().json : null;
+    if (json && json !== lastSavedJson) {
+      try {
+        const parsed = JSON.parse(json);
+        if (parsed.accounts) {
+          state = parsed;
+          lastSavedJson = json;
+        }
+      } catch (e) { console.error('Dati remoti non validi:', e); }
+    } else if (!json && !loaded) {
+      state = defaultState();
+      saveData();
+    }
+    normalizeState();
+    loaded = true;
+    document.getElementById('resetBtn').style.display = 'block';
+    render();
+  }, (err) => {
+    console.error('Errore di sincronizzazione:', err);
+    const msg = document.getElementById('loadingMsg');
+    if (msg) msg.textContent = 'Errore di connessione al database. Controlla la connessione e ricarica la pagina.';
+  });
+}
+
+function stopSync() {
+  if (unsubscribeSync) { unsubscribeSync(); unsubscribeSync = null; }
+  state = { accounts: {}, order: [], activeId: null };
+  lastSavedJson = null;
+  loaded = false;
+}
+
+async function saveData(statusEl) {
+  lastSavedJson = JSON.stringify(state);
+  try {
+    if (!auth.currentUser) throw new Error('non autenticato');
+    // la cache locale di Firestore rende la scrittura immediata anche offline
+    setDoc(doc(db, 'groups', auth.currentUser.uid), { json: lastSavedJson, updatedAt: Date.now() })
+      .catch(e => console.error('Storage error:', e));
+    if (statusEl) {
+      statusEl.textContent = '✓ Salvato';
+      setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 1500);
+    }
+  } catch (e) {
+    if (statusEl) statusEl.textContent = '⚠️ Errore nel salvataggio. Riprova.';
+    console.error('Storage error:', e);
+  }
+}
+
+function acc() { return state.accounts[state.activeId]; }
+function cats() { return CATS_BY_TYPE[acc().type] || CATS_BY_TYPE.casa; }
+
+function fmt(n) {
+  return n.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+}
+function monthKey(dateStr) { return dateStr.slice(0,7); }
+function monthLabel(key) {
+  const [y,m] = key.split('-');
+  return `${MONTH_NAMES[parseInt(m,10)-1]} ${y}`;
+}
+
+function calcBalances() {
+  const a = acc();
+  const n = a.people.length;
+  if (n === 0) return [];
+  const totalByPerson = {};
+  a.people.forEach(p => totalByPerson[p] = 0);
+  let grandTotal = 0;
+  a.expenses.forEach(e => {
+    totalByPerson[e.paidBy] = (totalByPerson[e.paidBy] || 0) + e.amount;
+    grandTotal += e.amount;
+  });
+  const share = grandTotal / n;
+  const net = {};
+  a.people.forEach(p => { net[p] = totalByPerson[p] - share; });
+
+  const debtors = [];
+  const creditors = [];
+  Object.entries(net).forEach(([p, v]) => {
+    if (v < -0.005) debtors.push({ p, v: -v });
+    else if (v > 0.005) creditors.push({ p, v });
+  });
+  const transactions = [];
+  let i = 0, j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const amt = Math.min(debtors[i].v, creditors[j].v);
+    if (amt > 0.005) transactions.push({ from: debtors[i].p, to: creditors[j].p, amount: amt });
+    debtors[i].v -= amt;
+    creditors[j].v -= amt;
+    if (debtors[i].v < 0.01) i++;
+    if (creditors[j].v < 0.01) j++;
+  }
+  return transactions;
+}
+
+function isSettled(from, to) {
+  return acc().settlements.some(s => s.from === from && s.to === to);
+}
+
+function render() {
+  const app = document.getElementById('app');
+  if (!loaded) { app.innerHTML = '<div class="loading">Caricamento dati...</div>'; return; }
+
+  const a = acc();
+  document.getElementById('appTitle').textContent = `${a.icon} ${a.name}`;
+  document.getElementById('appSub').textContent = a.type === 'viaggio' ? 'le spese del viaggio, tutte in un posto' : 'le spese condivise, senza pensieri';
+
+  renderAccountsBar();
+
+  let html = '<div class="tabs">';
+  html += tabBtn('spese', '🧾', 'Spese');
+  html += tabBtn('saldo', '⚖️', 'Saldo');
+  html += tabBtn('analisi', '📊', 'Analisi');
+  html += tabBtn('persone', '👥', 'Persone');
+  html += '</div>';
+
+  html += `<div class="section ${activeTab==='spese'?'active':''}">` + renderSpese() + '</div>';
+  html += `<div class="section ${activeTab==='saldo'?'active':''}">` + renderSaldo() + '</div>';
+  html += `<div class="section ${activeTab==='analisi'?'active':''}">` + renderAnalisi() + '</div>';
+  html += `<div class="section ${activeTab==='persone'?'active':''}">` + renderPersone() + '</div>';
+
+  html += '<div class="status-msg" id="statusMsg"></div>';
+  app.innerHTML = html;
+  attachHandlers();
+}
+
+function renderAccountsBar() {
+  const bar = document.getElementById('accountsBar');
+  let html = state.order.map(id => {
+    const a = state.accounts[id];
+    return `<div class="account-pill ${id===state.activeId?'active':''}" data-account="${id}">${a.icon} ${esc(a.name)}</div>`;
+  }).join('');
+  html += `<div class="account-pill add" data-newaccount="1">➕ Nuovo</div>`;
+  bar.innerHTML = html;
+
+  bar.querySelectorAll('[data-account]').forEach(el => {
+    el.addEventListener('click', () => {
+      state.activeId = el.dataset.account;
+      activeTab = 'spese';
+      filters = { person: 'all', category: 'all' };
+      analysisMonth = null;
+      render();
+    });
+  });
+  const addEl = bar.querySelector('[data-newaccount]');
+  if (addEl) addEl.addEventListener('click', showNewAccountModal);
+}
+
+function tabBtn(id, icon, label) {
+  return `<div class="tab ${activeTab===id?'active':''}" data-tab="${id}"><span class="tab-icon">${icon}</span>${label}</div>`;
+}
+
+function renderSpese() {
+  const a = acc();
+  const CATS = cats();
+  const peopleOpts = a.people.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  const catOpts = CATS.map(c => `<option value="${c}">${CAT_ICONS[c]} ${c}</option>`).join('');
+
+  if (a.people.length < 2) {
+    return `<div class="empty-msg"><span class="empty-emoji">👋</span>Aggiungi almeno 2 persone nella scheda "Persone" per iniziare a registrare le spese di ${a.type === 'viaggio' ? 'questo viaggio' : 'questo conto'}.</div>`;
+  }
+
+  let form = `
+    <label>Descrizione</label>
+    <input type="text" id="descInput" placeholder="es. ${a.type === 'viaggio' ? 'Hotel due notti' : 'Spesa supermercato'}">
+    <label>Importo (€)</label>
+    <input type="number" id="amountInput" step="0.01" min="0" placeholder="0.00">
+    <label>Categoria</label>
+    <select id="catInput">${catOpts}</select>
+    <label>Pagato da</label>
+    <select id="paidByInput">${peopleOpts}</select>
+    <label>Data</label>
+    <input type="date" id="dateInput" value="${new Date().toISOString().slice(0,10)}">
+    <button class="btn-primary" id="addExpenseBtn">➕ Aggiungi spesa</button>
+    <hr class="dashed">
+  `;
+
+  const filterPeople = ['<option value="all">Tutte le persone</option>'].concat(
+    a.people.map(p => `<option value="${esc(p)}" ${filters.person===p?'selected':''}>${esc(p)}</option>`)
+  ).join('');
+  const filterCats = ['<option value="all">Tutte le categorie</option>'].concat(
+    CATS.map(c => `<option value="${c}" ${filters.category===c?'selected':''}>${CAT_ICONS[c]} ${c}</option>`)
+  ).join('');
+
+  form += `<div class="filters">
+    <select id="filterPerson">${filterPeople}</select>
+    <select id="filterCategory">${filterCats}</select>
+  </div>`;
+
+  let list = a.expenses
+    .filter(e => filters.person === 'all' || e.paidBy === filters.person)
+    .filter(e => filters.category === 'all' || e.category === filters.category)
+    .sort((x,y) => y.date.localeCompare(x.date));
+
+  let total = 0;
+  if (list.length === 0) {
+    form += `<div class="empty-msg"><span class="empty-emoji">🔍</span>Nessuna spesa trovata${filters.person!=='all'||filters.category!=='all' ? ' con questi filtri' : ''}.</div>`;
+  } else {
+    form += list.map(e => {
+      total += e.amount;
+      return `<div class="expense-row">
+        <div class="expense-icon">${CAT_ICONS[e.category] || '📦'}</div>
+        <div class="expense-info">
+          <div class="expense-desc">${esc(e.desc)}</div>
+          <div class="expense-meta">${esc(e.paidBy)} · ${formatDate(e.date)}</div>
+        </div>
+        <div class="expense-amount">${fmt(e.amount)}</div>
+        <button class="expense-del" data-del="${e.id}">✕</button>
+      </div>`;
+    }).join('');
+    form += `<div class="total-strip"><span>💰 Totale filtrato</span><span>${fmt(total)}</span></div>`;
+  }
+
+  return form;
+}
+
+function renderSaldo() {
+  const a = acc();
+  if (a.people.length < 2) {
+    return `<div class="empty-msg"><span class="empty-emoji">⚖️</span>Servono almeno 2 persone per calcolare un saldo.</div>`;
+  }
+  if (a.expenses.length === 0) {
+    return `<div class="empty-msg"><span class="empty-emoji">🧾</span>Nessuna spesa registrata ancora.</div>`;
+  }
+  const transactions = calcBalances();
+  if (transactions.length === 0) {
+    return `<div class="empty-msg"><span class="empty-emoji">🎉</span>Tutti i conti sono in pari!</div>`;
+  }
+  let html = transactions.map(t => {
+    const settled = isSettled(t.from, t.to);
+    return `<div class="balance-card ${settled?'settled':''}">
+      <div class="balance-text">${settled ? '✅' : '💳'} ${esc(t.from)} deve <b>${fmt(t.amount)}</b> a ${esc(t.to)}</div>
+      <button class="settle-btn" data-settle="${t.from}|${t.to}">${settled ? '↩️ Riapri' : '✔️ Pagato'}</button>
+    </div>`;
+  }).join('');
+
+  const totalByCat = {};
+  a.expenses.forEach(e => { totalByCat[e.category] = (totalByCat[e.category]||0) + e.amount; });
+  const grandTotal = a.expenses.reduce((s,e) => s+e.amount, 0);
+
+  html += '<hr class="dashed"><label>Totale per categoria</label><div class="totals-grid">';
+  Object.entries(totalByCat).forEach(([cat, amt]) => {
+    html += `<div class="label">${CAT_ICONS[cat] || '📦'} ${cat}</div><div class="val">${fmt(amt)}</div>`;
+  });
+  html += `</div><div class="total-strip"><span>💰 Totale generale</span><span>${fmt(grandTotal)}</span></div>`;
+
+  return html;
+}
+
+function getMonthlyTotals() {
+  const a = acc();
+  const map = {};
+  a.expenses.forEach(e => {
+    const k = monthKey(e.date);
+    map[k] = (map[k] || 0) + e.amount;
+  });
+  return Object.entries(map).sort((x,y) => x[0].localeCompare(y[0]));
+}
+
+function renderAnalisi() {
+  const a = acc();
+  if (a.expenses.length === 0) {
+    return `<div class="empty-msg"><span class="empty-emoji">📊</span>Nessuna spesa registrata ancora: aggiungi qualche voce nella scheda "Spese" per vedere le analisi.</div>`;
+  }
+
+  const monthly = getMonthlyTotals();
+  const keys = monthly.map(m => m[0]);
+  if (!analysisMonth || !keys.includes(analysisMonth)) {
+    analysisMonth = keys[keys.length - 1];
+  }
+
+  const monthOpts = keys.slice().reverse().map(k =>
+    `<option value="${k}" ${k===analysisMonth?'selected':''}>${monthLabel(k)}</option>`
+  ).join('');
+
+  const currentIdx = keys.indexOf(analysisMonth);
+  const currentTotal = monthly[currentIdx][1];
+  const prevTotal = currentIdx > 0 ? monthly[currentIdx-1][1] : null;
+  let diffPct = null;
+  if (prevTotal !== null && prevTotal > 0) diffPct = ((currentTotal - prevTotal) / prevTotal) * 100;
+
+  const monthExpenses = a.expenses.filter(e => monthKey(e.date) === analysisMonth);
+  const avgPerExpense = currentTotal / monthExpenses.length;
+
+  let html = `<div class="month-select-row"><select id="monthSelect">${monthOpts}</select></div>`;
+
+  html += '<div class="analytics-summary">';
+  html += `<div class="stat-box"><div class="stat-val">${fmt(currentTotal)}</div><div class="stat-label">💰 TOTALE MESE</div></div>`;
+  if (diffPct !== null) {
+    const cls = diffPct > 0 ? 'up' : (diffPct < 0 ? 'down' : '');
+    const arrow = diffPct > 0 ? '📈' : (diffPct < 0 ? '📉' : '➖');
+    html += `<div class="stat-box ${cls}"><div class="stat-val">${arrow} ${Math.abs(diffPct).toFixed(0)}%</div><div class="stat-label">VS MESE PREC.</div></div>`;
+  } else {
+    html += `<div class="stat-box"><div class="stat-val">—</div><div class="stat-label">VS MESE PREC.</div></div>`;
+  }
+  html += `<div class="stat-box"><div class="stat-val">${monthExpenses.length}</div><div class="stat-label">🧾 N. SPESE</div></div>`;
+  html += `<div class="stat-box"><div class="stat-val">${fmt(avgPerExpense)}</div><div class="stat-label">📐 MEDIA SPESA</div></div>`;
+  html += '</div>';
+
+  const chartMonths = monthly.slice(-6);
+  const maxVal = Math.max(...chartMonths.map(m => m[1]), 1);
+  const barW = 34, gap = 14, chartH = 90;
+  const svgW = chartMonths.length * (barW + gap);
+  let bars = '';
+  chartMonths.forEach(([k, val], idx) => {
+    const h = Math.max((val / maxVal) * chartH, 2);
+    const x = idx * (barW + gap);
+    const y = chartH - h;
+    const isCurrent = k === analysisMonth;
+    const [yy, mm] = k.split('-');
+    bars += `<rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="${isCurrent ? '#ff6b5e' : '#ffe1d6'}" rx="6"></rect>`;
+    bars += `<text x="${x + barW/2}" y="${chartH + 14}" text-anchor="middle" class="chart-bar-label">${mm}/${yy.slice(2)}</text>`;
+    bars += `<text x="${x + barW/2}" y="${y - 5}" text-anchor="middle" class="chart-val-label">${Math.round(val)}€</text>`;
+  });
+
+  html += `<div class="chart-wrap"><label>📈 Andamento ultimi mesi</label>
+    <svg viewBox="0 0 ${svgW} ${chartH + 26}" width="100%" height="130" preserveAspectRatio="xMinYMid meet">${bars}</svg>
+  </div>`;
+
+  const catTotals = {};
+  monthExpenses.forEach(e => { catTotals[e.category] = (catTotals[e.category] || 0) + e.amount; });
+  const catMax = Math.max(...Object.values(catTotals), 1);
+
+  html += '<hr class="dashed"><label>🍕 Categorie del mese</label>';
+  html += Object.entries(catTotals)
+    .sort((x,y) => y[1]-x[1])
+    .map(([cat, val]) => {
+      const pct = (val / catMax) * 100;
+      return `<div class="cat-bar-row">
+        <div class="cat-bar-head"><span class="cname">${CAT_ICONS[cat] || '📦'} ${cat}</span><span>${fmt(val)}</span></div>
+        <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${pct}%"></div></div>
+      </div>`;
+    }).join('');
+
+  return html;
+}
+
+function renderPersone() {
+  const a = acc();
+  let html = `
+    <label>Aggiungi partecipante</label>
+    <input type="text" id="personInput" placeholder="Nome">
+    <button class="btn-primary" id="addPersonBtn">👤 Aggiungi persona</button>
+  `;
+  if (a.people.length > 0) {
+    html += '<hr class="dashed"><div class="people-list">';
+    html += a.people.map(p => `<div class="person-chip">🙋 ${esc(p)} <button data-delperson="${esc(p)}">✕</button></div>`).join('');
+    html += '</div>';
+  } else {
+    html += '<div class="empty-msg"><span class="empty-emoji">🫂</span>Nessuna persona ancora aggiunta.</div>';
+  }
+  if (state.order.length > 1) {
+    html += `<button class="btn-danger-outline" id="deleteAccountBtn">🗑️ Elimina questo conto (${esc(a.name)})</button>`;
+  }
+  return html;
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+function formatDate(iso) {
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function attachHandlers() {
+  document.querySelectorAll('[data-tab]').forEach(el => {
+    el.addEventListener('click', () => { activeTab = el.dataset.tab; render(); });
+  });
+
+  const addPersonBtn = document.getElementById('addPersonBtn');
+  if (addPersonBtn) addPersonBtn.addEventListener('click', async () => {
+    const input = document.getElementById('personInput');
+    const name = input.value.trim();
+    if (!name) return;
+    if (acc().people.includes(name)) { showAlertModal('Questa persona esiste già in questo conto.'); return; }
+    acc().people.push(name);
+    render();
+    await saveData(document.getElementById('statusMsg'));
+  });
+
+  document.querySelectorAll('[data-delperson]').forEach(el => {
+    el.addEventListener('click', () => {
+      const name = el.dataset.delperson;
+      showConfirmModal(
+        '🙋 Rimuovere persona?',
+        `Rimuovere <b>${esc(name)}</b>? Le spese già registrate a suo nome resteranno nello storico.`,
+        'Rimuovi',
+        async () => {
+          acc().people = acc().people.filter(p => p !== name);
+          render();
+          await saveData(document.getElementById('statusMsg'));
+        }
+      );
+    });
+  });
+
+  const addExpenseBtn = document.getElementById('addExpenseBtn');
+  if (addExpenseBtn) addExpenseBtn.addEventListener('click', async () => {
+    const desc = document.getElementById('descInput').value.trim();
+    const amount = parseFloat(document.getElementById('amountInput').value);
+    const category = document.getElementById('catInput').value;
+    const paidBy = document.getElementById('paidByInput').value;
+    const date = document.getElementById('dateInput').value;
+    if (!desc || !amount || amount <= 0 || !paidBy || !date) {
+      showAlertModal('Compila tutti i campi correttamente.');
+      return;
+    }
+    acc().expenses.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), desc, amount, category, paidBy, date });
+    render();
+    await saveData(document.getElementById('statusMsg'));
+  });
+
+  document.querySelectorAll('[data-del]').forEach(el => {
+    el.addEventListener('click', () => {
+      const expId = el.dataset.del;
+      showConfirmModal(
+        '🧾 Eliminare spesa?',
+        'Questa spesa verrà rimossa definitivamente dallo storico.',
+        'Elimina',
+        async () => {
+          acc().expenses = acc().expenses.filter(e => e.id !== expId);
+          render();
+          await saveData(document.getElementById('statusMsg'));
+        }
+      );
+    });
+  });
+
+  document.querySelectorAll('[data-settle]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const [from, to] = el.dataset.settle.split('|');
+      const a = acc();
+      const idx = a.settlements.findIndex(s => s.from === from && s.to === to);
+      if (idx >= 0) a.settlements.splice(idx, 1);
+      else a.settlements.push({ from, to });
+      render();
+      await saveData(document.getElementById('statusMsg'));
+    });
+  });
+
+  const fp = document.getElementById('filterPerson');
+  if (fp) fp.addEventListener('change', () => { filters.person = fp.value; render(); });
+  const fc = document.getElementById('filterCategory');
+  if (fc) fc.addEventListener('change', () => { filters.category = fc.value; render(); });
+
+  const ms = document.getElementById('monthSelect');
+  if (ms) ms.addEventListener('change', () => { analysisMonth = ms.value; render(); });
+
+  const delAccBtn = document.getElementById('deleteAccountBtn');
+  if (delAccBtn) delAccBtn.addEventListener('click', showDeleteAccountModal);
+}
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  showConfirmModal(
+    '🗑️ Azzerare questo conto?',
+    `Verranno cancellate tutte le persone, spese e saldi di "<b>${esc(acc().name)}</b>". Gli altri conti non verranno toccati. Questa azione non può essere annullata.`,
+    'Azzera',
+    async () => {
+      const a = acc();
+      a.people = []; a.expenses = []; a.settlements = [];
+      render();
+      await saveData();
+    }
+  );
+});
+
+function showConfirmModal(title, message, confirmLabel, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>${title}</h3>
+      <div>${message}</div>
+      <div class="modal-actions">
+        <button class="btn-cancel" data-modal-cancel>Annulla</button>
+        <button class="btn-confirm" data-modal-confirm>${confirmLabel}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('[data-modal-cancel]').onclick = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('[data-modal-confirm]').onclick = async () => {
+    overlay.remove();
+    await onConfirm();
+  };
+}
+
+function showAlertModal(message) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div>${message}</div>
+      <div class="modal-actions">
+        <button class="btn-confirm" data-modal-ok style="flex:1">Ok</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('[data-modal-ok]').onclick = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
+function showNewAccountModal() {
+  let selectedType = 'viaggio';
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>✈️ Nuovo conto</h3>
+      <label>Nome del conto</label>
+      <input type="text" id="newAccName" placeholder="es. Viaggio a Lisbona">
+      <label>Tipo</label>
+      <div class="type-toggle">
+        <div class="type-opt selected" data-type="viaggio"><span class="to-icon">✈️</span>Viaggio</div>
+        <div class="type-opt" data-type="casa"><span class="to-icon">🏠</span>Casa/Altro</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="cancelNewAcc">Annulla</button>
+        <button class="btn-confirm" id="confirmNewAcc">Crea conto</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll('.type-opt').forEach(el => {
+    el.addEventListener('click', () => {
+      overlay.querySelectorAll('.type-opt').forEach(o => o.classList.remove('selected'));
+      el.classList.add('selected');
+      selectedType = el.dataset.type;
+    });
+  });
+  document.getElementById('cancelNewAcc').onclick = () => overlay.remove();
+  document.getElementById('confirmNewAcc').onclick = async () => {
+    const name = document.getElementById('newAccName').value.trim();
+    if (!name) { showAlertModal('Dai un nome al conto.'); return; }
+    const newAcc = newAccount(name, selectedType);
+    state.accounts[newAcc.id] = newAcc;
+    state.order.push(newAcc.id);
+    state.activeId = newAcc.id;
+    activeTab = 'spese';
+    filters = { person: 'all', category: 'all' };
+    overlay.remove();
+    render();
+    await saveData();
+  };
+}
+
+function showDeleteAccountModal() {
+  const a = acc();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>🗑️ Eliminare "${esc(a.name)}"?</h3>
+      <div>Tutti i dati di questo conto (persone, spese, saldi) andranno persi definitivamente. Questa azione non può essere annullata.</div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="cancelDelAcc">Annulla</button>
+        <button class="btn-confirm" id="confirmDelAcc">Elimina conto</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('cancelDelAcc').onclick = () => overlay.remove();
+  document.getElementById('confirmDelAcc').onclick = async () => {
+    const idToRemove = state.activeId;
+    delete state.accounts[idToRemove];
+    state.order = state.order.filter(id => id !== idToRemove);
+    state.activeId = state.order[0];
+    activeTab = 'spese';
+    overlay.remove();
+    render();
+    await saveData();
+  };
+}
+
+// ---- Autenticazione ----
+
+function showScreen(name) {
+  document.getElementById('setupScreen').style.display = name === 'setup' ? 'block' : 'none';
+  document.getElementById('authScreen').style.display = name === 'auth' ? 'block' : 'none';
+  document.getElementById('mainApp').style.display = name === 'app' ? 'block' : 'none';
+}
+
+function authErrorMessage(e) {
+  const code = (e && e.code) || '';
+  if (code.includes('invalid-email')) return 'Email non valida.';
+  if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')) return 'Email o password errati.';
+  if (code.includes('email-already-in-use')) return 'Esiste già un conto con questa email: usa "Accedi".';
+  if (code.includes('weak-password')) return 'Password troppo corta: servono almeno 6 caratteri.';
+  if (code.includes('too-many-requests')) return 'Troppi tentativi: riprova tra qualche minuto.';
+  if (code.includes('network-request-failed')) return 'Problema di connessione: controlla la rete.';
+  return 'Qualcosa è andato storto. Riprova.';
+}
+
+if (!configured) {
+  showScreen('setup');
+} else {
+  const authMsg = document.getElementById('authMsg');
+  const emailInput = document.getElementById('loginEmail');
+  const passInput = document.getElementById('loginPassword');
+
+  document.getElementById('loginBtn').addEventListener('click', async () => {
+    authMsg.textContent = '';
+    try {
+      await signInWithEmailAndPassword(auth, emailInput.value.trim(), passInput.value);
+    } catch (e) { authMsg.textContent = authErrorMessage(e); }
+  });
+
+  document.getElementById('registerBtn').addEventListener('click', async () => {
+    authMsg.textContent = '';
+    const email = emailInput.value.trim();
+    const pass = passInput.value;
+    if (!email || !pass) { authMsg.textContent = 'Inserisci email e password per creare il conto.'; return; }
+    try {
+      await createUserWithEmailAndPassword(auth, email, pass);
+    } catch (e) { authMsg.textContent = authErrorMessage(e); }
+  });
+
+  document.getElementById('forgotBtn').addEventListener('click', async () => {
+    authMsg.textContent = '';
+    const email = emailInput.value.trim();
+    if (!email) { authMsg.textContent = 'Scrivi la tua email qui sopra, poi ripremi.'; return; }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      authMsg.textContent = 'Email di recupero inviata: controlla la casella.';
+    } catch (e) { authMsg.textContent = authErrorMessage(e); }
+  });
+
+  passInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('loginBtn').click();
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await signOut(auth);
+  });
+
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      showScreen('app');
+      startSync(user);
+    } else {
+      stopSync();
+      passInput.value = '';
+      showScreen('auth');
+    }
+  });
+}
+
+// Registrazione del service worker per l'uso offline e l'installazione come app
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(err => console.log('SW non registrato:', err));
+  });
+}
+</script>
+</body>
+</html>
