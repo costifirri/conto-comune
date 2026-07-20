@@ -436,15 +436,23 @@
 
   <div id="authScreen" style="display:none">
     <hr class="dashed">
+    <div class="tabs">
+      <div class="tab active" id="authTabLogin"><span class="tab-icon">🔑</span>Accedi</div>
+      <div class="tab" id="authTabRegister"><span class="tab-icon">✨</span>Registrati</div>
+    </div>
+    <div class="auth-note" id="authIntro">Entra nel tuo conto comune con email e password.</div>
     <label>Email</label>
     <input type="email" id="loginEmail" placeholder="es. nome@esempio.it" autocomplete="username">
     <label>Password</label>
     <input type="password" id="loginPassword" placeholder="minimo 6 caratteri" autocomplete="current-password">
-    <button class="btn-primary" id="loginBtn">🔑 Accedi</button>
-    <button class="btn-secondary" id="registerBtn">✨ Crea nuovo conto comune</button>
+    <div id="confirmWrap" style="display:none">
+      <label>Ripeti password</label>
+      <input type="password" id="confirmPassword" placeholder="riscrivi la stessa password" autocomplete="new-password">
+    </div>
+    <button class="btn-primary" id="authSubmitBtn">🔑 Accedi</button>
     <button class="reset-link" id="forgotBtn">password dimenticata?</button>
     <div class="status-msg" id="authMsg" style="color:var(--accent)"></div>
-    <div class="auth-note">Un "conto comune" è un account condiviso: chi ha email e password vede le stesse spese, da qualsiasi dispositivo.</div>
+    <div class="auth-note" id="authNote">Un "conto comune" è un account condiviso: chi ha email e password vede le stesse spese, da qualsiasi dispositivo.</div>
   </div>
 
   <div id="mainApp" style="display:none">
@@ -1120,22 +1128,47 @@ if (!configured) {
   const authMsg = document.getElementById('authMsg');
   const emailInput = document.getElementById('loginEmail');
   const passInput = document.getElementById('loginPassword');
+  const confirmInput = document.getElementById('confirmPassword');
+  const submitBtn = document.getElementById('authSubmitBtn');
 
-  document.getElementById('loginBtn').addEventListener('click', async () => {
+  let authMode = 'login';
+
+  function setAuthMode(mode) {
+    authMode = mode;
     authMsg.textContent = '';
-    try {
-      await signInWithEmailAndPassword(auth, emailInput.value.trim(), passInput.value);
-    } catch (e) { authMsg.textContent = authErrorMessage(e); }
-  });
+    const isLogin = mode === 'login';
+    document.getElementById('authTabLogin').classList.toggle('active', isLogin);
+    document.getElementById('authTabRegister').classList.toggle('active', !isLogin);
+    document.getElementById('confirmWrap').style.display = isLogin ? 'none' : 'block';
+    document.getElementById('forgotBtn').style.display = isLogin ? 'block' : 'none';
+    document.getElementById('authIntro').textContent = isLogin
+      ? 'Entra nel tuo conto comune con email e password.'
+      : 'Crea un nuovo conto comune: scegli email e password da condividere con le persone del gruppo.';
+    submitBtn.textContent = isLogin ? '🔑 Accedi' : '✨ Crea il conto comune';
+    passInput.setAttribute('autocomplete', isLogin ? 'current-password' : 'new-password');
+    document.getElementById('authNote').textContent = isLogin
+      ? 'Un "conto comune" è un account condiviso: chi ha email e password vede le stesse spese, da qualsiasi dispositivo.'
+      : 'Usa un\'email vera (serve per recuperare la password). Poi condividi le credenziali con il tuo gruppo: tutti vedrete le stesse spese.';
+  }
 
-  document.getElementById('registerBtn').addEventListener('click', async () => {
+  document.getElementById('authTabLogin').addEventListener('click', () => setAuthMode('login'));
+  document.getElementById('authTabRegister').addEventListener('click', () => setAuthMode('register'));
+
+  submitBtn.addEventListener('click', async () => {
     authMsg.textContent = '';
     const email = emailInput.value.trim();
     const pass = passInput.value;
-    if (!email || !pass) { authMsg.textContent = 'Inserisci email e password per creare il conto.'; return; }
-    try {
-      await createUserWithEmailAndPassword(auth, email, pass);
-    } catch (e) { authMsg.textContent = authErrorMessage(e); }
+    if (!email || !pass) { authMsg.textContent = 'Inserisci email e password.'; return; }
+    if (authMode === 'register') {
+      if (pass !== confirmInput.value) { authMsg.textContent = 'Le due password non coincidono.'; return; }
+      try {
+        await createUserWithEmailAndPassword(auth, email, pass);
+      } catch (e) { authMsg.textContent = authErrorMessage(e); }
+    } else {
+      try {
+        await signInWithEmailAndPassword(auth, email, pass);
+      } catch (e) { authMsg.textContent = authErrorMessage(e); }
+    }
   });
 
   document.getElementById('forgotBtn').addEventListener('click', async () => {
@@ -1149,7 +1182,10 @@ if (!configured) {
   });
 
   passInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') document.getElementById('loginBtn').click();
+    if (e.key === 'Enter' && authMode === 'login') submitBtn.click();
+  });
+  confirmInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitBtn.click();
   });
 
   document.getElementById('logoutBtn').addEventListener('click', async () => {

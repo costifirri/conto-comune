@@ -1,4 +1,4 @@
-const CACHE_NAME = 'conto-comune-v2';
+const CACHE_NAME = 'conto-comune-v3';
 const ASSETS = [
   './',
   './index.html',
