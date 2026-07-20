@@ -398,6 +398,52 @@
   .cat-bar-track { background: var(--accent-soft); border-radius: 6px; height: 10px; overflow: hidden; }
   .cat-bar-fill { background: linear-gradient(90deg, var(--accent), var(--yellow)); height: 100%; border-radius: 6px; transition: width 0.4s cubic-bezier(.34,1.56,.64,1); }
 
+  .budget-card {
+    background: var(--accent2-soft);
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 4px;
+    cursor: pointer;
+  }
+  .budget-card.warn { background: #fff3d6; }
+  .budget-card.over { background: var(--accent-soft); }
+  .budget-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12.5px;
+    font-weight: 800;
+    margin-bottom: 7px;
+  }
+  .budget-track {
+    background: rgba(51,48,46,0.12);
+    border-radius: 6px;
+    height: 10px;
+    overflow: hidden;
+  }
+  .budget-fill {
+    height: 100%;
+    border-radius: 6px;
+    background: var(--accent2);
+    transition: width 0.4s cubic-bezier(.34,1.56,.64,1);
+  }
+  .budget-card.warn .budget-fill { background: #f0b429; }
+  .budget-card.over .budget-fill { background: var(--accent); }
+  .budget-note {
+    font-size: 11px;
+    color: var(--ink-light);
+    margin-top: 6px;
+    font-weight: 600;
+  }
+  .budget-set-btn {
+    width: 100%;
+    background: var(--accent2-soft);
+    color: #1a7a72;
+    padding: 11px;
+    font-size: 12.5px;
+    font-weight: 700;
+    border-radius: 12px;
+    margin-bottom: 4px;
+  }
   .footer-line {
     text-align: center;
     font-size: 11px;
@@ -448,10 +494,11 @@
     <div id="registerExtras" style="display:none">
       <label>Ripeti password</label>
       <input type="password" id="confirmPassword" placeholder="riscrivi la stessa password" autocomplete="new-password">
-      <label>Che tipo di conto comune apri?</label>
+      <label>Che tipo di conto apri?</label>
       <div class="type-toggle">
         <div class="type-opt selected" data-regtype="casa"><span class="to-icon">🏠</span>Casa/Altro</div>
         <div class="type-opt" data-regtype="viaggio"><span class="to-icon">✈️</span>Viaggio</div>
+        <div class="type-opt" data-regtype="personale"><span class="to-icon">💰</span>Personale</div>
       </div>
       <label>Nome del conto</label>
       <input type="text" id="regAccountName" placeholder="es. Casa nostra">
@@ -495,11 +542,13 @@ if (configured) {
 
 const CATS_BY_TYPE = {
   casa: ['Casa','Spesa','Bollette','Svago','Trasporti','Altro'],
-  viaggio: ['Volo','Alloggio','Cibo','Attività','Trasporti','Shopping','Altro']
+  viaggio: ['Volo','Alloggio','Cibo','Attività','Trasporti','Shopping','Altro'],
+  personale: ['Spesa','Casa','Trasporti','Salute','Abbigliamento','Svago','Altro']
 };
 const CAT_ICONS = {
   Casa:'🏠', Spesa:'🛒', Bollette:'💡', Svago:'🎉', Trasporti:'🚗', Altro:'📦',
-  Volo:'✈️', Alloggio:'🏨', Cibo:'🍽️', Attività:'🎟️', Shopping:'🛍️'
+  Volo:'✈️', Alloggio:'🏨', Cibo:'🍽️', Attività:'🎟️', Shopping:'🛍️',
+  Salute:'💊', Abbigliamento:'👕'
 };
 const MONTH_NAMES = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 
@@ -512,7 +561,8 @@ let loaded = false;
 function newAccount(name, type) {
   // id lungo e non indovinabile: funziona anche da "chiave" del link di invito
   const id = crypto.randomUUID().replace(/-/g, '') + Math.random().toString(36).slice(2, 10);
-  return { id, name, icon: type === 'viaggio' ? '✈️' : '🏠', type, people: [], expenses: [], settlements: [] };
+  const icon = type === 'viaggio' ? '✈️' : (type === 'personale' ? '💰' : '🏠');
+  return { id, name, icon, type, people: [], expenses: [], settlements: [] };
 }
 
 // impostato durante la registrazione: tipo e nome del primo conto scelti dall'utente
@@ -756,18 +806,21 @@ function render() {
 
   const a = acc();
   if (!a) { app.innerHTML = '<div class="loading">Caricamento conto...</div>'; return; }
+  const personal = a.type === 'personale';
+  if (personal && activeTab === 'saldo') activeTab = 'spese';
   document.getElementById('appTitle').textContent = `${a.icon} ${a.name}`;
-  document.getElementById('appSub').textContent = a.type === 'viaggio' ? 'le spese del viaggio, tutte in un posto' : 'le spese condivise, senza pensieri';
+  document.getElementById('appSub').textContent = a.type === 'viaggio' ? 'le spese del viaggio, tutte in un posto'
+    : (personal ? 'le tue spese, sotto controllo' : 'le spese condivise, senza pensieri');
 
   let html = '<div class="tabs">';
   html += tabBtn('spese', '🧾', 'Spese');
-  html += tabBtn('saldo', '⚖️', 'Saldo');
+  if (!personal) html += tabBtn('saldo', '⚖️', 'Saldo');
   html += tabBtn('analisi', '📊', 'Analisi');
-  html += tabBtn('persone', '👥', 'Persone');
+  html += personal ? tabBtn('persone', '⚙️', 'Gestione') : tabBtn('persone', '👥', 'Persone');
   html += '</div>';
 
   html += `<div class="section ${activeTab==='spese'?'active':''}">` + renderSpese() + '</div>';
-  html += `<div class="section ${activeTab==='saldo'?'active':''}">` + renderSaldo() + '</div>';
+  if (!personal) html += `<div class="section ${activeTab==='saldo'?'active':''}">` + renderSaldo() + '</div>';
   html += `<div class="section ${activeTab==='analisi'?'active':''}">` + renderAnalisi() + '</div>';
   html += `<div class="section ${activeTab==='persone'?'active':''}">` + renderPersone() + '</div>';
 
@@ -805,23 +858,28 @@ function tabBtn(id, icon, label) {
 
 function renderSpese() {
   const a = acc();
+  const personal = a.type === 'personale';
   const CATS = cats();
   const peopleOpts = a.people.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
   const catOpts = CATS.map(c => `<option value="${c}">${CAT_ICONS[c]} ${c}</option>`).join('');
 
-  if (a.people.length < 2) {
+  if (!personal && a.people.length < 2) {
     return `<div class="empty-msg"><span class="empty-emoji">👋</span>Aggiungi almeno 2 persone nella scheda "Persone" per iniziare a registrare le spese di ${a.type === 'viaggio' ? 'questo viaggio' : 'questo conto'}.</div>`;
   }
 
-  let form = `
+  let form = personal ? renderBudgetBar(a) : '';
+
+  form += `
     <label>Descrizione</label>
     <input type="text" id="descInput" placeholder="es. ${a.type === 'viaggio' ? 'Hotel due notti' : 'Spesa supermercato'}">
     <label>Importo (€)</label>
     <input type="number" id="amountInput" step="0.01" min="0" placeholder="0.00">
     <label>Categoria</label>
-    <select id="catInput">${catOpts}</select>
+    <select id="catInput">${catOpts}</select>`;
+  if (!personal) form += `
     <label>Pagato da</label>
-    <select id="paidByInput">${peopleOpts}</select>
+    <select id="paidByInput">${peopleOpts}</select>`;
+  form += `
     <label>Data</label>
     <input type="date" id="dateInput" value="${new Date().toISOString().slice(0,10)}">
     <button class="btn-primary" id="addExpenseBtn">➕ Aggiungi spesa</button>
@@ -836,7 +894,7 @@ function renderSpese() {
   ).join('');
 
   form += `<div class="filters">
-    <select id="filterPerson">${filterPeople}</select>
+    ${personal ? '' : `<select id="filterPerson">${filterPeople}</select>`}
     <select id="filterCategory">${filterCats}</select>
   </div>`;
 
@@ -855,7 +913,7 @@ function renderSpese() {
         <div class="expense-icon">${CAT_ICONS[e.category] || '📦'}</div>
         <div class="expense-info">
           <div class="expense-desc">${esc(e.desc)}</div>
-          <div class="expense-meta">${esc(e.paidBy)} · ${formatDate(e.date)}</div>
+          <div class="expense-meta">${e.paidBy ? esc(e.paidBy) + ' · ' : ''}${formatDate(e.date)}</div>
         </div>
         <div class="expense-amount">${fmt(e.amount)}</div>
         <button class="expense-del" data-del="${e.id}">✕</button>
@@ -865,6 +923,51 @@ function renderSpese() {
   }
 
   return form;
+}
+
+function renderBudgetBar(a) {
+  const mk = new Date().toISOString().slice(0, 7);
+  const spent = a.expenses.filter(e => monthKey(e.date) === mk).reduce((s, e) => s + e.amount, 0);
+  if (!a.budget) {
+    return `<button class="budget-set-btn" id="budgetBtn">🎯 Imposta un budget mensile</button>`;
+  }
+  const pct = Math.min((spent / a.budget) * 100, 100);
+  const over = spent > a.budget;
+  const warn = !over && spent >= a.budget * 0.75;
+  const cls = over ? 'over' : (warn ? 'warn' : '');
+  return `<div class="budget-card ${cls}" id="budgetBtn">
+    <div class="budget-head"><span>🎯 Budget di ${monthLabel(mk)}</span><span>${fmt(spent)} / ${fmt(a.budget)}</span></div>
+    <div class="budget-track"><div class="budget-fill" style="width:${pct}%"></div></div>
+    <div class="budget-note">${over ? '⚠️ Budget superato di ' + fmt(spent - a.budget) : 'Restano ' + fmt(a.budget - spent) + ' per questo mese'} · tocca per modificare</div>
+  </div>`;
+}
+
+function showBudgetModal() {
+  const a = acc();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>🎯 Budget mensile</h3>
+      <div>Quanto vuoi spendere al massimo ogni mese? Lascia vuoto per rimuovere il budget.</div>
+      <label>Importo (€)</label>
+      <input type="number" id="budgetInput" step="1" min="0" value="${a.budget || ''}" placeholder="es. 800">
+      <div class="modal-actions">
+        <button class="btn-cancel" id="cancelBudget">Annulla</button>
+        <button class="btn-confirm" id="confirmBudget">Salva</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('cancelBudget').onclick = () => overlay.remove();
+  document.getElementById('confirmBudget').onclick = async () => {
+    const v = parseFloat(document.getElementById('budgetInput').value);
+    if (v > 0) a.budget = v; else delete a.budget;
+    overlay.remove();
+    render();
+    await saveData(document.getElementById('statusMsg'));
+  };
 }
 
 function renderSaldo() {
@@ -990,6 +1093,11 @@ function renderAnalisi() {
 
 function renderPersone() {
   const a = acc();
+  if (a.type === 'personale') {
+    let html = `<div class="empty-msg"><span class="empty-emoji">💰</span>Questo è un conto personale: è privato, legato al tuo accesso, e non prevede altri partecipanti né link di invito.</div>`;
+    html += `<button class="btn-danger-outline" id="deleteAccountBtn">🗑️ Elimina il conto e tutte le sue spese</button>`;
+    return html;
+  }
   let html = `
     <label>Aggiungi partecipante</label>
     <input type="text" id="personInput" placeholder="Nome">
@@ -1057,9 +1165,10 @@ function attachHandlers() {
     const desc = document.getElementById('descInput').value.trim();
     const amount = parseFloat(document.getElementById('amountInput').value);
     const category = document.getElementById('catInput').value;
-    const paidBy = document.getElementById('paidByInput').value;
+    const paidBySel = document.getElementById('paidByInput');
+    const paidBy = paidBySel ? paidBySel.value : '';
     const date = document.getElementById('dateInput').value;
-    if (!desc || !amount || amount <= 0 || !paidBy || !date) {
+    if (!desc || !amount || amount <= 0 || (paidBySel && !paidBy) || !date) {
       showAlertModal('Compila tutti i campi correttamente.');
       return;
     }
@@ -1106,6 +1215,9 @@ function attachHandlers() {
 
   const delAccBtn = document.getElementById('deleteAccountBtn');
   if (delAccBtn) delAccBtn.addEventListener('click', showDeleteAccountModal);
+
+  const budgetBtn = document.getElementById('budgetBtn');
+  if (budgetBtn) budgetBtn.addEventListener('click', showBudgetModal);
 
   const inviteBtn = document.getElementById('inviteBtn');
   if (inviteBtn) inviteBtn.addEventListener('click', async () => {
@@ -1210,6 +1322,7 @@ function showNewAccountModal() {
       <div class="type-toggle">
         <div class="type-opt selected" data-type="viaggio"><span class="to-icon">✈️</span>Viaggio</div>
         <div class="type-opt" data-type="casa"><span class="to-icon">🏠</span>Casa/Altro</div>
+        <div class="type-opt" data-type="personale"><span class="to-icon">💰</span>Personale</div>
       </div>
       <div class="modal-actions">
         <button class="btn-cancel" id="cancelNewAcc">Annulla</button>
@@ -1330,7 +1443,7 @@ if (!configured) {
       el.classList.add('selected');
       regType = el.dataset.regtype;
       document.getElementById('regAccountName').placeholder =
-        regType === 'viaggio' ? 'es. Viaggio a Lisbona' : 'es. Casa nostra';
+        regType === 'viaggio' ? 'es. Viaggio a Lisbona' : (regType === 'personale' ? 'es. Spese mie' : 'es. Casa nostra');
     });
   });
 
@@ -1343,7 +1456,7 @@ if (!configured) {
       if (pass !== confirmInput.value) { authMsg.textContent = 'Le due password non coincidono.'; return; }
       const accName = document.getElementById('regAccountName').value.trim();
       pendingFirstAccount = {
-        name: accName || (regType === 'viaggio' ? 'Viaggio' : 'Casa'),
+        name: accName || (regType === 'viaggio' ? 'Viaggio' : (regType === 'personale' ? 'Personale' : 'Casa')),
         type: regType
       };
       try {
