@@ -445,9 +445,16 @@
     <input type="email" id="loginEmail" placeholder="es. nome@esempio.it" autocomplete="username">
     <label>Password</label>
     <input type="password" id="loginPassword" placeholder="minimo 6 caratteri" autocomplete="current-password">
-    <div id="confirmWrap" style="display:none">
+    <div id="registerExtras" style="display:none">
       <label>Ripeti password</label>
       <input type="password" id="confirmPassword" placeholder="riscrivi la stessa password" autocomplete="new-password">
+      <label>Che tipo di conto comune apri?</label>
+      <div class="type-toggle">
+        <div class="type-opt selected" data-regtype="casa"><span class="to-icon">🏠</span>Casa/Altro</div>
+        <div class="type-opt" data-regtype="viaggio"><span class="to-icon">✈️</span>Viaggio</div>
+      </div>
+      <label>Nome del conto</label>
+      <input type="text" id="regAccountName" placeholder="es. Casa nostra">
     </div>
     <button class="btn-primary" id="authSubmitBtn">🔑 Accedi</button>
     <button class="reset-link" id="forgotBtn">password dimenticata?</button>
@@ -507,9 +514,13 @@ function newAccount(name, type) {
   return { id, name, icon: type === 'viaggio' ? '✈️' : '🏠', type, people: [], expenses: [], settlements: [] };
 }
 
+// impostato durante la registrazione: tipo e nome del primo conto scelti dall'utente
+let pendingFirstAccount = null;
+
 function defaultState() {
-  const acc = newAccount('Casa', 'casa');
-  acc.id = 'acc-casa';
+  const opts = pendingFirstAccount || { name: 'Casa', type: 'casa' };
+  pendingFirstAccount = null;
+  const acc = newAccount(opts.name, opts.type);
   return { accounts: { [acc.id]: acc }, order: [acc.id], activeId: acc.id };
 }
 
@@ -1139,7 +1150,7 @@ if (!configured) {
     const isLogin = mode === 'login';
     document.getElementById('authTabLogin').classList.toggle('active', isLogin);
     document.getElementById('authTabRegister').classList.toggle('active', !isLogin);
-    document.getElementById('confirmWrap').style.display = isLogin ? 'none' : 'block';
+    document.getElementById('registerExtras').style.display = isLogin ? 'none' : 'block';
     document.getElementById('forgotBtn').style.display = isLogin ? 'block' : 'none';
     document.getElementById('authIntro').textContent = isLogin
       ? 'Entra nel tuo conto comune con email e password.'
@@ -1154,6 +1165,17 @@ if (!configured) {
   document.getElementById('authTabLogin').addEventListener('click', () => setAuthMode('login'));
   document.getElementById('authTabRegister').addEventListener('click', () => setAuthMode('register'));
 
+  let regType = 'casa';
+  document.querySelectorAll('[data-regtype]').forEach(el => {
+    el.addEventListener('click', () => {
+      document.querySelectorAll('[data-regtype]').forEach(o => o.classList.remove('selected'));
+      el.classList.add('selected');
+      regType = el.dataset.regtype;
+      document.getElementById('regAccountName').placeholder =
+        regType === 'viaggio' ? 'es. Viaggio a Lisbona' : 'es. Casa nostra';
+    });
+  });
+
   submitBtn.addEventListener('click', async () => {
     authMsg.textContent = '';
     const email = emailInput.value.trim();
@@ -1161,9 +1183,14 @@ if (!configured) {
     if (!email || !pass) { authMsg.textContent = 'Inserisci email e password.'; return; }
     if (authMode === 'register') {
       if (pass !== confirmInput.value) { authMsg.textContent = 'Le due password non coincidono.'; return; }
+      const accName = document.getElementById('regAccountName').value.trim();
+      pendingFirstAccount = {
+        name: accName || (regType === 'viaggio' ? 'Viaggio' : 'Casa'),
+        type: regType
+      };
       try {
         await createUserWithEmailAndPassword(auth, email, pass);
-      } catch (e) { authMsg.textContent = authErrorMessage(e); }
+      } catch (e) { pendingFirstAccount = null; authMsg.textContent = authErrorMessage(e); }
     } else {
       try {
         await signInWithEmailAndPassword(auth, email, pass);
