@@ -477,10 +477,10 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, signOut, sendPasswordResetEmail
+  createUserWithEmailAndPassword, signOut, sendPasswordResetEmail, signInAnonymously
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
-  initializeFirestore, persistentLocalCache, doc, setDoc, onSnapshot
+  initializeFirestore, persistentLocalCache, doc, getDoc, setDoc, deleteDoc, onSnapshot
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -510,48 +510,138 @@ let analysisMonth = null;
 let loaded = false;
 
 function newAccount(name, type) {
-  const id = 'acc-' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+  // id lungo e non indovinabile: funziona anche da "chiave" del link di invito
+  const id = crypto.randomUUID().replace(/-/g, '') + Math.random().toString(36).slice(2, 10);
   return { id, name, icon: type === 'viaggio' ? '✈️' : '🏠', type, people: [], expenses: [], settlements: [] };
 }
 
 // impostato durante la registrazione: tipo e nome del primo conto scelti dall'utente
 let pendingFirstAccount = null;
+// conto da aprire se l'app è stata lanciata da un link di invito (?join=...)
+let pendingJoinId = null;
 
-function defaultState() {
+let userDocUnsub = null;
+let contoUnsubs = {};
+let lastSavedById = {};
+let lastSavedUserDoc = null;
+let currentUid = null;
+let creatingUserDoc = false;
+
+function userRef() { return doc(db, 'users', currentUid); }
+function contoRef(id) { return doc(db, 'conti', id); }
+
+// vecchio formato: tutto lo stato in groups/{uid}; lo spezziamo in un documento per conto
+async function migrateOldData() {
+  try {
+    const snap = await getDoc(doc(db, 'groups', currentUid));
+    if (!snap.exists() || !snap.data().json) return null;
+    const parsed = JSON.parse(snap.data().json);
+    if (!parsed.accounts || !parsed.order || !parsed.order.length) return null;
+    const order = [];
+    for (const oldId of parsed.order) {
+      const a = parsed.accounts[oldId];
+      if (!a) continue;
+      const fresh = newAccount(a.name, a.type);
+      a.id = fresh.id;
+      await setDoc(contoRef(a.id), { json: JSON.stringify(a), updatedAt: Date.now() });
+      order.push(a.id);
+    }
+    return { order, activeId: order[0] || null };
+  } catch (e) { console.error('Migrazione fallita:', e); return null; }
+}
+
+async function createFirstConto() {
   const opts = pendingFirstAccount || { name: 'Casa', type: 'casa' };
   pendingFirstAccount = null;
-  const acc = newAccount(opts.name, opts.type);
-  return { accounts: { [acc.id]: acc }, order: [acc.id], activeId: acc.id };
+  const a = newAccount(opts.name, opts.type);
+  await setDoc(contoRef(a.id), { json: JSON.stringify(a), updatedAt: Date.now() });
+  return { order: [a.id], activeId: a.id };
 }
 
-function normalizeState() {
-  if (!state.order || state.order.length === 0) state = defaultState();
-  if (!state.activeId || !state.accounts[state.activeId]) state.activeId = state.order[0];
+function syncConto(id) {
+  if (contoUnsubs[id]) return;
+  contoUnsubs[id] = onSnapshot(contoRef(id), (snap) => {
+    if (!snap.exists()) {
+      // il conto è stato eliminato (da questo o da un altro membro)
+      if (contoUnsubs[id]) { contoUnsubs[id](); delete contoUnsubs[id]; }
+      delete state.accounts[id];
+      delete lastSavedById[id];
+      if (state.order.includes(id)) {
+        state.order = state.order.filter(x => x !== id);
+        if (state.activeId === id) state.activeId = state.order[0] || null;
+        saveData();
+      }
+      render();
+      return;
+    }
+    const json = snap.data().json;
+    if (json && json !== lastSavedById[id]) {
+      try {
+        state.accounts[id] = JSON.parse(json);
+        lastSavedById[id] = json;
+      } catch (e) { console.error('Dati conto non validi:', e); }
+    }
+    render();
+  }, (err) => console.error('Errore sync conto:', err));
 }
-
-let unsubscribeSync = null;
-let lastSavedJson = null;
 
 function startSync(user) {
-  document.getElementById('userEmail').textContent = user.email;
-  const ref = doc(db, 'groups', user.uid);
-  unsubscribeSync = onSnapshot(ref, (snap) => {
-    const json = snap.exists() ? snap.data().json : null;
-    if (json && json !== lastSavedJson) {
-      try {
-        const parsed = JSON.parse(json);
-        if (parsed.accounts) {
-          state = parsed;
-          lastSavedJson = json;
-        }
-      } catch (e) { console.error('Dati remoti non validi:', e); }
-    } else if (!json && !loaded) {
-      state = defaultState();
-      saveData();
+  currentUid = user.uid;
+  document.getElementById('userEmail').textContent = user.isAnonymous ? 'ospite (accesso via link)' : user.email;
+  document.getElementById('logoutBtn').style.display = user.isAnonymous ? 'none' : 'inline';
+  userDocUnsub = onSnapshot(userRef(), async (snap) => {
+    if (!snap.exists()) {
+      // primo accesso: migra dal vecchio formato oppure prepara la lista dei conti
+      if (creatingUserDoc) return;
+      creatingUserDoc = true;
+      let init = await migrateOldData();
+      if (!init) {
+        if (user.isAnonymous || pendingJoinId) init = { order: [], activeId: null };
+        else init = await createFirstConto();
+      }
+      await setDoc(userRef(), { ...init, updatedAt: Date.now() });
+      creatingUserDoc = false;
+      return; // il prossimo snapshot (con il documento creato) prosegue da qui
     }
-    normalizeState();
+    const data = snap.data();
+    const incoming = JSON.stringify({ order: data.order || [], activeId: data.activeId || null });
+    if (incoming !== lastSavedUserDoc) {
+      state.order = data.order || [];
+      state.activeId = data.activeId || null;
+      lastSavedUserDoc = incoming;
+    }
+    // apertura tramite link di invito
+    if (pendingJoinId) {
+      const jid = pendingJoinId;
+      pendingJoinId = null;
+      history.replaceState(null, '', location.pathname);
+      if (state.order.includes(jid)) {
+        state.activeId = jid;
+        saveData();
+      } else {
+        const csnap = await getDoc(contoRef(jid));
+        if (csnap.exists()) {
+          state.order.push(jid);
+          state.activeId = jid;
+          saveData();
+        } else {
+          showAlertModal('Il link di invito non è valido oppure il conto è stato eliminato.');
+        }
+      }
+    }
+    if (!state.activeId && state.order.length) state.activeId = state.order[0];
+    // allinea le sottoscrizioni in tempo reale alla lista dei conti
+    state.order.forEach(syncConto);
+    Object.keys(contoUnsubs).forEach(id => {
+      if (!state.order.includes(id)) {
+        contoUnsubs[id]();
+        delete contoUnsubs[id];
+        delete state.accounts[id];
+        delete lastSavedById[id];
+      }
+    });
     loaded = true;
-    document.getElementById('resetBtn').style.display = 'block';
+    document.getElementById('resetBtn').style.display = state.order.length ? 'block' : 'none';
     render();
   }, (err) => {
     console.error('Errore di sincronizzazione:', err);
@@ -561,19 +651,36 @@ function startSync(user) {
 }
 
 function stopSync() {
-  if (unsubscribeSync) { unsubscribeSync(); unsubscribeSync = null; }
+  if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
+  Object.values(contoUnsubs).forEach(u => u());
+  contoUnsubs = {};
+  lastSavedById = {};
+  lastSavedUserDoc = null;
+  currentUid = null;
+  creatingUserDoc = false;
   state = { accounts: {}, order: [], activeId: null };
-  lastSavedJson = null;
   loaded = false;
 }
 
 async function saveData(statusEl) {
-  lastSavedJson = JSON.stringify(state);
   try {
     if (!auth.currentUser) throw new Error('non autenticato');
-    // la cache locale di Firestore rende la scrittura immediata anche offline
-    setDoc(doc(db, 'groups', auth.currentUser.uid), { json: lastSavedJson, updatedAt: Date.now() })
-      .catch(e => console.error('Storage error:', e));
+    // la cache locale di Firestore rende le scritture immediate anche offline
+    state.order.forEach(id => {
+      const a = state.accounts[id];
+      if (!a) return;
+      const json = JSON.stringify(a);
+      if (json !== lastSavedById[id]) {
+        lastSavedById[id] = json;
+        setDoc(contoRef(id), { json, updatedAt: Date.now() }).catch(e => console.error('Storage error:', e));
+      }
+    });
+    const userJson = JSON.stringify({ order: state.order, activeId: state.activeId });
+    if (userJson !== lastSavedUserDoc) {
+      lastSavedUserDoc = userJson;
+      setDoc(userRef(), { order: state.order, activeId: state.activeId, updatedAt: Date.now() })
+        .catch(e => console.error('Storage error:', e));
+    }
     if (statusEl) {
       statusEl.textContent = '✓ Salvato';
       setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 1500);
@@ -638,11 +745,19 @@ function render() {
   const app = document.getElementById('app');
   if (!loaded) { app.innerHTML = '<div class="loading">Caricamento dati...</div>'; return; }
 
+  renderAccountsBar();
+
+  if (!state.order.length) {
+    document.getElementById('appTitle').textContent = '💸 Conto Comune';
+    document.getElementById('appSub').textContent = 'le spese condivise, senza pensieri';
+    app.innerHTML = `<div class="empty-msg"><span class="empty-emoji">📭</span>Non sei ancora in nessun conto.<br>Apri un link di invito ricevuto dal tuo gruppo, oppure creane uno con "➕ Nuovo" qui sopra.</div>`;
+    return;
+  }
+
   const a = acc();
+  if (!a) { app.innerHTML = '<div class="loading">Caricamento conto...</div>'; return; }
   document.getElementById('appTitle').textContent = `${a.icon} ${a.name}`;
   document.getElementById('appSub').textContent = a.type === 'viaggio' ? 'le spese del viaggio, tutte in un posto' : 'le spese condivise, senza pensieri';
-
-  renderAccountsBar();
 
   let html = '<div class="tabs">';
   html += tabBtn('spese', '🧾', 'Spese');
@@ -676,6 +791,7 @@ function renderAccountsBar() {
       activeTab = 'spese';
       filters = { person: 'all', category: 'all' };
       analysisMonth = null;
+      saveData();
       render();
     });
   });
@@ -886,9 +1002,11 @@ function renderPersone() {
   } else {
     html += '<div class="empty-msg"><span class="empty-emoji">🫂</span>Nessuna persona ancora aggiunta.</div>';
   }
-  if (state.order.length > 1) {
-    html += `<button class="btn-danger-outline" id="deleteAccountBtn">🗑️ Elimina questo conto (${esc(a.name)})</button>`;
-  }
+  html += `<hr class="dashed"><label>Invita nel conto</label>
+    <div class="auth-note" style="text-align:left;margin-top:2px">Chi apre il link entra in "${esc(a.name)}" direttamente, senza password: condividilo solo con le persone del gruppo.</div>
+    <button class="btn-secondary" id="inviteBtn">🔗 Condividi link di invito</button>`;
+  html += `<button class="btn-danger-outline" id="leaveAccountBtn">🚪 Esci solo tu da questo conto</button>`;
+  html += `<button class="btn-danger-outline" id="deleteAccountBtn">🗑️ Elimina il conto per tutti (${esc(a.name)})</button>`;
   return html;
 }
 
@@ -988,6 +1106,43 @@ function attachHandlers() {
 
   const delAccBtn = document.getElementById('deleteAccountBtn');
   if (delAccBtn) delAccBtn.addEventListener('click', showDeleteAccountModal);
+
+  const inviteBtn = document.getElementById('inviteBtn');
+  if (inviteBtn) inviteBtn.addEventListener('click', async () => {
+    const link = location.origin + location.pathname + '?join=' + state.activeId;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Conto Comune', text: `Unisciti al conto "${acc().name}" su Conto Comune`, url: link });
+        return;
+      } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    try {
+      await navigator.clipboard.writeText(link);
+      showAlertModal('🔗 Link copiato! Incollalo su WhatsApp o dove preferisci.');
+    } catch (e) {
+      showAlertModal(`Copia manualmente questo link:<br><b style="word-break:break-all">${link}</b>`);
+    }
+  });
+
+  const leaveBtn = document.getElementById('leaveAccountBtn');
+  if (leaveBtn) leaveBtn.addEventListener('click', () => {
+    showConfirmModal(
+      '🚪 Uscire dal conto?',
+      `Il conto "<b>${esc(acc().name)}</b>" sparirà dalla tua lista, ma resterà disponibile per le altre persone. Potrai rientrare con un link di invito.`,
+      'Esci',
+      async () => {
+        const id = state.activeId;
+        if (contoUnsubs[id]) { contoUnsubs[id](); delete contoUnsubs[id]; }
+        delete state.accounts[id];
+        delete lastSavedById[id];
+        state.order = state.order.filter(x => x !== id);
+        state.activeId = state.order[0] || null;
+        activeTab = 'spese';
+        render();
+        await saveData();
+      }
+    );
+  });
 }
 
 document.getElementById('resetBtn').addEventListener('click', () => {
@@ -1093,7 +1248,7 @@ function showDeleteAccountModal() {
   overlay.innerHTML = `
     <div class="modal-box">
       <h3>🗑️ Eliminare "${esc(a.name)}"?</h3>
-      <div>Tutti i dati di questo conto (persone, spese, saldi) andranno persi definitivamente. Questa azione non può essere annullata.</div>
+      <div>Tutti i dati di questo conto (persone, spese, saldi) andranno persi definitivamente <b>per tutte le persone del conto</b>, anche per chi era entrato con un link. Questa azione non può essere annullata.</div>
       <div class="modal-actions">
         <button class="btn-cancel" id="cancelDelAcc">Annulla</button>
         <button class="btn-confirm" id="confirmDelAcc">Elimina conto</button>
@@ -1104,13 +1259,16 @@ function showDeleteAccountModal() {
   document.getElementById('cancelDelAcc').onclick = () => overlay.remove();
   document.getElementById('confirmDelAcc').onclick = async () => {
     const idToRemove = state.activeId;
+    if (contoUnsubs[idToRemove]) { contoUnsubs[idToRemove](); delete contoUnsubs[idToRemove]; }
     delete state.accounts[idToRemove];
+    delete lastSavedById[idToRemove];
     state.order = state.order.filter(id => id !== idToRemove);
-    state.activeId = state.order[0];
+    state.activeId = state.order[0] || null;
     activeTab = 'spese';
     overlay.remove();
     render();
     await saveData();
+    try { await deleteDoc(contoRef(idToRemove)); } catch (e) { console.error('Eliminazione fallita:', e); }
   };
 }
 
@@ -1219,12 +1377,27 @@ if (!configured) {
     await signOut(auth);
   });
 
-  onAuthStateChanged(auth, (user) => {
+  // apertura da link di invito: ?join=<id del conto>
+  const joinParam = new URLSearchParams(location.search).get('join');
+  if (joinParam) pendingJoinId = joinParam;
+
+  onAuthStateChanged(auth, async (user) => {
     if (user) {
       showScreen('app');
       startSync(user);
     } else {
       stopSync();
+      if (pendingJoinId) {
+        // invitato senza account: accesso automatico invisibile, senza registrazione
+        showScreen('app');
+        try {
+          await signInAnonymously(auth);
+        } catch (e) {
+          showScreen('auth');
+          authMsg.textContent = authErrorMessage(e);
+        }
+        return;
+      }
       passInput.value = '';
       showScreen('auth');
     }
