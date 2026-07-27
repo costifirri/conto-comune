@@ -398,6 +398,45 @@
   .cat-bar-track { background: var(--accent-soft); border-radius: 6px; height: 10px; overflow: hidden; }
   .cat-bar-fill { background: linear-gradient(90deg, var(--accent), var(--yellow)); height: 100%; border-radius: 6px; transition: width 0.4s cubic-bezier(.34,1.56,.64,1); }
 
+  .share-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .share-chip {
+    padding: 7px 13px;
+    border-radius: 14px;
+    background: var(--bg);
+    border: 2px solid var(--line);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    color: var(--ink-light);
+    user-select: none;
+  }
+  .share-chip.selected {
+    background: var(--accent2-soft);
+    border-color: var(--accent2);
+    color: #1a7a72;
+  }
+
+  .month-group summary {
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 10px 12px;
+    background: var(--accent-soft);
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 800;
+    margin-top: 10px;
+    user-select: none;
+  }
+  .month-group summary::-webkit-details-marker { display: none; }
+  .month-group summary::after { content: '▾'; transition: transform 0.2s ease; color: var(--ink-light); }
+  .month-group[open] summary::after { transform: rotate(180deg); }
+  .month-group .mg-total { margin-left: auto; }
+  .month-group .expense-row { padding-left: 6px; padding-right: 6px; }
+
   .budget-card {
     background: var(--accent2-soft);
     border-radius: 14px;
@@ -556,6 +595,7 @@ let state = { accounts: {}, order: [], activeId: null };
 let activeTab = 'spese';
 let filters = { person: 'all', category: 'all' };
 let analysisMonth = null;
+let openMonths = null; // mesi espansi nella lista spese (null = solo il più recente)
 let loaded = false;
 
 function newAccount(name, type) {
@@ -755,18 +795,26 @@ function monthLabel(key) {
 
 function calcBalances() {
   const a = acc();
-  const n = a.people.length;
-  if (n === 0) return [];
-  const totalByPerson = {};
-  a.people.forEach(p => totalByPerson[p] = 0);
-  let grandTotal = 0;
-  a.expenses.forEach(e => {
-    totalByPerson[e.paidBy] = (totalByPerson[e.paidBy] || 0) + e.amount;
-    grandTotal += e.amount;
-  });
-  const share = grandTotal / n;
+  if (a.people.length === 0) return [];
   const net = {};
-  a.people.forEach(p => { net[p] = totalByPerson[p] - share; });
+  const ensure = p => { if (net[p] === undefined) net[p] = 0; };
+  a.people.forEach(ensure);
+  a.expenses.forEach(e => {
+    // la spesa si divide tra i partecipanti scelti (per le vecchie spese: tutti)
+    const parts = (e.sharedWith && e.sharedWith.length) ? e.sharedWith : a.people;
+    if (!parts.length) return;
+    ensure(e.paidBy);
+    net[e.paidBy] += e.amount;
+    const share = e.amount / parts.length;
+    parts.forEach(p => { ensure(p); net[p] -= share; });
+  });
+  // i pagamenti registrati saldano il debito accumulato fino a quel momento
+  (a.settlements || []).forEach(s => {
+    if (typeof s.amount !== 'number') return; // vecchio formato senza importo: ignorato
+    ensure(s.from); ensure(s.to);
+    net[s.from] += s.amount;
+    net[s.to] -= s.amount;
+  });
 
   const debtors = [];
   const creditors = [];
@@ -787,9 +835,6 @@ function calcBalances() {
   return transactions;
 }
 
-function isSettled(from, to) {
-  return acc().settlements.some(s => s.from === from && s.to === to);
-}
 
 function render() {
   const app = document.getElementById('app');
@@ -844,6 +889,7 @@ function renderAccountsBar() {
       activeTab = 'spese';
       filters = { person: 'all', category: 'all' };
       analysisMonth = null;
+      openMonths = null;
       saveData();
       render();
     });
@@ -878,7 +924,9 @@ function renderSpese() {
     <select id="catInput">${catOpts}</select>`;
   if (!personal) form += `
     <label>Pagato da</label>
-    <select id="paidByInput">${peopleOpts}</select>`;
+    <select id="paidByInput">${peopleOpts}</select>
+    <label>Divisa tra</label>
+    <div class="share-chips">${a.people.map(p => `<div class="share-chip selected" data-share="${esc(p)}">${esc(p)}</div>`).join('')}</div>`;
   form += `
     <label>Data</label>
     <input type="date" id="dateInput" value="${new Date().toISOString().slice(0,10)}">
@@ -903,26 +951,47 @@ function renderSpese() {
     .filter(e => filters.category === 'all' || e.category === filters.category)
     .sort((x,y) => y.date.localeCompare(x.date));
 
-  let total = 0;
   if (list.length === 0) {
     form += `<div class="empty-msg"><span class="empty-emoji">🔍</span>Nessuna spesa trovata${filters.person!=='all'||filters.category!=='all' ? ' con questi filtri' : ''}.</div>`;
   } else {
-    form += list.map(e => {
-      total += e.amount;
-      return `<div class="expense-row">
-        <div class="expense-icon">${CAT_ICONS[e.category] || '📦'}</div>
-        <div class="expense-info">
-          <div class="expense-desc">${esc(e.desc)}</div>
-          <div class="expense-meta">${e.paidBy ? esc(e.paidBy) + ' · ' : ''}${formatDate(e.date)}</div>
-        </div>
-        <div class="expense-amount">${fmt(e.amount)}</div>
-        <button class="expense-del" data-del="${e.id}">✕</button>
-      </div>`;
+    // raggruppa per mese (la lista è già ordinata dalla più recente)
+    const groups = [];
+    list.forEach(e => {
+      const k = monthKey(e.date);
+      let g = groups[groups.length - 1];
+      if (!g || g.key !== k) { g = { key: k, items: [], total: 0 }; groups.push(g); }
+      g.items.push(e);
+      g.total += e.amount;
+    });
+    let total = 0;
+    form += groups.map((g, gi) => {
+      total += g.total;
+      const open = openMonths ? openMonths.has(g.key) : gi === 0;
+      return `<details class="month-group" data-month="${g.key}" ${open ? 'open' : ''}>
+        <summary><span>📅 ${monthLabel(g.key)}</span><span class="mg-total">${fmt(g.total)}</span></summary>
+        ${g.items.map(e => expenseRow(e, a)).join('')}
+      </details>`;
     }).join('');
     form += `<div class="total-strip"><span>💰 Totale filtrato</span><span>${fmt(total)}</span></div>`;
   }
 
   return form;
+}
+
+function expenseRow(e, a) {
+  let extra = '';
+  if (e.sharedWith && e.sharedWith.length && a.people.length && e.sharedWith.length !== a.people.length) {
+    extra = ' · per: ' + e.sharedWith.map(esc).join(', ');
+  }
+  return `<div class="expense-row">
+    <div class="expense-icon">${CAT_ICONS[e.category] || '📦'}</div>
+    <div class="expense-info">
+      <div class="expense-desc">${esc(e.desc)}</div>
+      <div class="expense-meta">${e.paidBy ? esc(e.paidBy) + ' · ' : ''}${formatDate(e.date)}${extra}</div>
+    </div>
+    <div class="expense-amount">${fmt(e.amount)}</div>
+    <button class="expense-del" data-del="${e.id}">✕</button>
+  </div>`;
 }
 
 function renderBudgetBar(a) {
@@ -979,16 +1048,30 @@ function renderSaldo() {
     return `<div class="empty-msg"><span class="empty-emoji">🧾</span>Nessuna spesa registrata ancora.</div>`;
   }
   const transactions = calcBalances();
+  let html = '';
   if (transactions.length === 0) {
-    return `<div class="empty-msg"><span class="empty-emoji">🎉</span>Tutti i conti sono in pari!</div>`;
+    html += `<div class="empty-msg"><span class="empty-emoji">🎉</span>Tutti i conti sono in pari!</div>`;
+  } else {
+    html += transactions.map(t => `<div class="balance-card">
+      <div class="balance-text">💳 ${esc(t.from)} deve <b>${fmt(t.amount)}</b> a ${esc(t.to)}</div>
+      <button class="settle-btn" data-settle="${t.from}|${t.to}|${t.amount.toFixed(2)}">✔️ Pagato</button>
+    </div>`).join('');
   }
-  let html = transactions.map(t => {
-    const settled = isSettled(t.from, t.to);
-    return `<div class="balance-card ${settled?'settled':''}">
-      <div class="balance-text">${settled ? '✅' : '💳'} ${esc(t.from)} deve <b>${fmt(t.amount)}</b> a ${esc(t.to)}</div>
-      <button class="settle-btn" data-settle="${t.from}|${t.to}">${settled ? '↩️ Riapri' : '✔️ Pagato'}</button>
-    </div>`;
-  }).join('');
+
+  const paid = (a.settlements || []).filter(s => typeof s.amount === 'number');
+  if (paid.length) {
+    html += '<hr class="dashed"><label>Pagamenti registrati</label>';
+    html += paid.slice().sort((x, y) => (y.date || '').localeCompare(x.date || '')).map(s => `
+      <div class="expense-row">
+        <div class="expense-icon">🤝</div>
+        <div class="expense-info">
+          <div class="expense-desc">${esc(s.from)} ha pagato ${esc(s.to)}</div>
+          <div class="expense-meta">${s.date ? formatDate(s.date) : ''}</div>
+        </div>
+        <div class="expense-amount">${fmt(s.amount)}</div>
+        <button class="expense-del" data-delsettle="${s.id}">✕</button>
+      </div>`).join('');
+  }
 
   const totalByCat = {};
   a.expenses.forEach(e => { totalByCat[e.category] = (totalByCat[e.category]||0) + e.amount; });
@@ -1172,7 +1255,14 @@ function attachHandlers() {
       showAlertModal('Compila tutti i campi correttamente.');
       return;
     }
-    acc().expenses.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), desc, amount, category, paidBy, date });
+    let sharedWith = null;
+    if (document.querySelector('[data-share]')) {
+      sharedWith = [...document.querySelectorAll('[data-share].selected')].map(c => c.dataset.share);
+      if (!sharedWith.length) { showAlertModal('Seleziona almeno una persona in "Divisa tra".'); return; }
+    }
+    const exp = { id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), desc, amount, category, paidBy, date };
+    if (sharedWith) exp.sharedWith = sharedWith;
+    acc().expenses.push(exp);
     render();
     await saveData(document.getElementById('statusMsg'));
   });
@@ -1195,13 +1285,44 @@ function attachHandlers() {
 
   document.querySelectorAll('[data-settle]').forEach(el => {
     el.addEventListener('click', async () => {
-      const [from, to] = el.dataset.settle.split('|');
-      const a = acc();
-      const idx = a.settlements.findIndex(s => s.from === from && s.to === to);
-      if (idx >= 0) a.settlements.splice(idx, 1);
-      else a.settlements.push({ from, to });
+      const [from, to, amountStr] = el.dataset.settle.split('|');
+      acc().settlements.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        from, to,
+        amount: parseFloat(amountStr),
+        date: new Date().toISOString().slice(0, 10)
+      });
       render();
       await saveData(document.getElementById('statusMsg'));
+    });
+  });
+
+  document.querySelectorAll('[data-delsettle]').forEach(el => {
+    el.addEventListener('click', () => {
+      showConfirmModal(
+        '🤝 Annullare il pagamento?',
+        'Il pagamento verrà rimosso e il debito tornerà a comparire nel saldo.',
+        'Annulla pagamento',
+        async () => {
+          acc().settlements = acc().settlements.filter(s => s.id !== el.dataset.delsettle);
+          render();
+          await saveData(document.getElementById('statusMsg'));
+        }
+      );
+    });
+  });
+
+  document.querySelectorAll('[data-share]').forEach(el => {
+    el.addEventListener('click', () => el.classList.toggle('selected'));
+  });
+
+  document.querySelectorAll('.month-group').forEach(d => {
+    d.addEventListener('toggle', () => {
+      if (openMonths === null) {
+        openMonths = new Set();
+        document.querySelectorAll('.month-group[open]').forEach(x => openMonths.add(x.dataset.month));
+      }
+      if (d.open) openMonths.add(d.dataset.month); else openMonths.delete(d.dataset.month);
     });
   });
 
