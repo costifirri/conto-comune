@@ -1,4 +1,4 @@
-const CACHE_NAME = 'conto-comune-v7';
+const CACHE_NAME = 'conto-comune-v8';
 const ASSETS = [
   './',
   './index.html',
@@ -24,17 +24,42 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Rete prima, cache come riserva: così gli aggiornamenti del sito arrivano subito,
-// ma l'app funziona anche offline
+// il messaggio arriva dal pulsante "Ripara" dell'app
+self.addEventListener('message', (event) => {
+  if (event.data === 'svuota-cache') {
+    event.waitUntil(caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))));
+  }
+});
+
+// Rete prima, cache come riserva: gli aggiornamenti arrivano subito e l'app
+// funziona offline. Vengono gestiti SOLO i file dell'app: il traffico verso
+// Firebase e le altre origini passa intatto, altrimenti una risposta di riserva
+// sbagliata (per esempio index.html al posto di uno script) blocca l'avvio.
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
+  const req = event.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
   event.respondWith(
-    fetch(event.request)
+    fetch(req)
       .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
+        }
         return response;
       })
-      .catch(() => caches.match(event.request).then((r) => r || caches.match('./index.html')))
+      .catch(async () => {
+        const hit = await caches.match(req);
+        if (hit) return hit;
+        // solo l'apertura di una pagina può ripiegare sull'app in cache
+        if (req.mode === 'navigate') {
+          const home = await caches.match('./index.html');
+          if (home) return home;
+        }
+        return Response.error();
+      })
   );
 });

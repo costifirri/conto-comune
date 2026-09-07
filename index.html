@@ -510,6 +510,21 @@
   <h1 id="appTitle">💸 Conto Comune</h1>
   <div class="sub" id="appSub">le spese condivise, senza pensieri</div>
 
+  <div id="bootScreen">
+    <hr class="dashed">
+    <div class="loading" id="bootMsg">Avvio in corso...</div>
+    <div id="bootRepair" style="display:none">
+      <div class="empty-msg">
+        <span class="empty-emoji">🧰</span>
+        L'app non riesce ad avviarsi.<br>
+        Di solito basta ripulire i file salvati sul dispositivo: le tue spese
+        sono al sicuro nel cloud e non verranno toccate.
+      </div>
+      <button class="btn-primary" id="repairBtn">🔄 Ripara e riavvia</button>
+      <div class="auth-note" id="repairNote">Se non bastasse, controlla la connessione e riprova.</div>
+    </div>
+  </div>
+
   <div id="setupScreen" style="display:none">
     <hr class="dashed">
     <div class="empty-msg">
@@ -558,6 +573,59 @@
     <div class="footer-line"><span id="userEmail"></span> · <button class="link-btn" id="logoutBtn">esci</button></div>
   </div>
 </div>
+
+<script>
+// Rete di sicurezza: gira anche se il codice principale non parte (script non modulare).
+// Se dopo qualche secondo l'app non ha dato segni di vita, offre la riparazione.
+(function () {
+  var mostrato = false;
+  function mostraRiparazione(motivo) {
+    if (mostrato || window.__appAvviata) return;
+    mostrato = true;
+    var msg = document.getElementById('bootMsg');
+    var box = document.getElementById('bootRepair');
+    if (msg) msg.style.display = 'none';
+    if (box) box.style.display = 'block';
+    if (motivo) console.error('Avvio non riuscito:', motivo);
+  }
+  window.__mostraRiparazione = mostraRiparazione;
+
+  var timer = setTimeout(function () { mostraRiparazione('tempo scaduto'); }, 12000);
+  window.__avvioRiuscito = function () {
+    window.__appAvviata = true;
+    clearTimeout(timer);
+    var boot = document.getElementById('bootScreen');
+    if (boot) boot.style.display = 'none';
+  };
+
+  window.addEventListener('error', function (e) {
+    if (e && e.target && e.target !== window && e.target.tagName === 'SCRIPT') mostraRiparazione('script non caricato');
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) { mostraRiparazione(e.reason); });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var btn = document.getElementById('repairBtn');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      var nota = document.getElementById('repairNote');
+      btn.disabled = true;
+      if (nota) nota.textContent = 'Pulizia in corso...';
+      try {
+        if ('serviceWorker' in navigator) {
+          var regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(function (r) { return r.unregister(); }));
+        }
+        if (window.caches) {
+          var keys = await caches.keys();
+          await Promise.all(keys.map(function (k) { return caches.delete(k); }));
+        }
+      } catch (err) { console.error('Pulizia non riuscita:', err); }
+      // ricarica saltando ogni copia salvata (il login resta valido)
+      location.replace(location.pathname + '?fresh=' + Date.now());
+    });
+  });
+})();
+</script>
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -1509,6 +1577,7 @@ function showDeleteAccountModal() {
 // ---- Autenticazione ----
 
 function showScreen(name) {
+  if (window.__avvioRiuscito) window.__avvioRiuscito();
   document.getElementById('setupScreen').style.display = name === 'setup' ? 'block' : 'none';
   document.getElementById('authScreen').style.display = name === 'auth' ? 'block' : 'none';
   document.getElementById('mainApp').style.display = name === 'app' ? 'block' : 'none';
@@ -1640,8 +1709,23 @@ if (!configured) {
 
 // Registrazione del service worker per l'uso offline e l'installazione come app
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(err => console.log('SW non registrato:', err));
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('sw.js');
+      // una nuova versione prende il posto della precedente al prossimo avvio
+      reg.addEventListener('updatefound', () => {
+        const nuovo = reg.installing;
+        if (!nuovo) return;
+        nuovo.addEventListener('statechange', () => {
+          if (nuovo.state === 'activated' && navigator.serviceWorker.controller) {
+            console.log('Aggiornamento installato: sarà attivo alla prossima apertura.');
+          }
+        });
+      });
+      reg.update().catch(() => {});
+    } catch (err) {
+      console.log('SW non registrato:', err);
+    }
   });
 }
 </script>

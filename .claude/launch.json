@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "conto-comune",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8477", "--directory", "C:/conto-comune"],
+      "port": 8477
+    }
+  ]
+}
